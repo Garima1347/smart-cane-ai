@@ -1,0 +1,56 @@
+# Smart Cane configuration — edit these values to tune behavior.
+
+vision:
+  model: "yolov8n.pt"        # nano model recommended for Pi 5 CPU speed
+  confidence_threshold: 0.45
+  camera_index: 0             # webcam index on Mac / USB cam on Pi
+  frame_width: 640
+  frame_height: 480
+  inference_size: 320         # YOLO input size (smaller = faster on Pi)
+  frame_skip: 1                # run YOLO every Nth frame (1 = every frame)
+  use_picamera_on_pi: true     # try Pi Camera Module first, fallback to USB cam
+  threaded_capture: true       # decouple camera I/O from YOLO inference (recommended, big FPS win on Pi 5)
+
+sensors:
+  forward:
+    name: "front"
+    trig_pin: 23
+    echo_pin: 24
+    max_distance_cm: 400
+  ground:
+    enabled: true               # set false if you don't have a second sensor wired up
+    name: "ground"
+    trig_pin: 17
+    echo_pin: 27
+    max_distance_cm: 150
+    drop_threshold_cm: 12        # reading this much FARTHER than baseline = hole/drop-off
+    raise_threshold_cm: 8        # reading this much CLOSER than baseline = step-up/curb
+    calibration_samples: 30      # readings taken at startup to learn "flat ground"
+
+haptic:
+  enabled: true
+  pin: 18                        # PWM-capable GPIO pin driving the vibration motor (via transistor)
+
+sos_button:
+  enabled: true
+  pin: 22
+  hold_seconds: 2.0              # how long to hold the button to trigger SOS
+
+alerts:
+  danger_distance_cm: 60       # below this -> urgent "STOP" style alert
+  warning_distance_cm: 150     # below this -> normal caution alert
+  cooldown_seconds: 2.5        # min gap between repeating the same alert
+  urgent_cooldown_seconds: 1.0 # min gap for danger-level alerts (faster repeats allowed)
+  adaptive_speed_cooldown: true  # shorten cooldowns automatically when closing in fast on an obstacle
+
+voice:
+  rate: 175          # words per minute
+  volume: 1.0
+  voice_id: null      # null = system default; set to a specific voice id if desired
+
+logging:
+  level: "INFO"       # DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+  log_file: "smart_cane.log"
+  log_obstacles_csv: true
+  obstacle_log_file: "obstacle_log.csv"

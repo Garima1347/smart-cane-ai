@@ -1,0 +1,10 @@
+ultralytics>=8.2.0
+opencv-python>=4.9.0
+pyttsx3>=2.90
+numpy>=1.26.0
+PyYAML>=6.0.1
+
+# Raspberry Pi only (installed separately by scripts/setup_pi.sh):
+# gpiozero
+# lgpio
+# picamera2   (usually pre-installed on Pi OS via apt, not pip)
