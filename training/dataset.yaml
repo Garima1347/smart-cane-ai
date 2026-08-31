@@ -1,0 +1,13 @@
+path: ./dataset
+
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+
+nam
+
+  0: crocodile_crack
+  1: longitudinal_crack
+  2: pothole
