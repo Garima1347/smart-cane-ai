@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Training data and generated files
+training/dataset/
+training/my_test_images/
+training/runs/
+training/wall.v1i.yolov8/
+training/yolov8n.pt
+yolov8n.pt
+runs/
+.DS_Store
+training/.DS_Store
