@@ -1,0 +1,26 @@
+# YOLOv8 dataset config for the custom road-hazard model.
+# Directory structure expected (standard Ultralytics format):
+#
+# training/
+#   dataset/
+#     images/
+#       train/   <- training images (.jpg/.png)
+#       val/     <- validation images
+#     labels/
+#       train/   <- YOLO-format .txt labels, one per image, same filename
+#       val/
+#
+# Each label line: <class_id> <x_center> <y_center> <width> <height>  (all normalized 0-1)
+
+path: ./dataset      # root dir, relative to this yaml file
+train: images/train
+val: images/val
+
+# Keep this list SHORT and REALISTIC for a hackathon timeline.
+# Start with the 2-3 highest-injury-risk classes, expand later.
+names:
+  0: pothole
+  1: open_drain
+  2: zebra_crossing
+  3: stairs
+  4: puddle
