@@ -37,3 +37,28 @@ Desktop.ini
 
 # macOS files
 .DS_Store
+# Python & Virtual Environments
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Model Weights & Training Outputs
+*.pt
+*.onnx
+*.engine
+runs/
+models/
+
+# Datasets
+datasets/
+
+# Logs & Data Collection
+*.log
+*.csv
+
+# OS & Editor Files
+.DS_Store
+.vscode/
+.idea/
