@@ -1,14 +1,18 @@
 # Smart Cane configuration — edit these values to tune behavior.
 
 vision:
-  model: "yolov8n.pt"        # nano model recommended for Pi 5 CPU speed
+  models:
+    general: "model/yolo11n.pt"
+    door: "model/best_door.pt"
+    road_hazard: "model/best_pothole.pt"
+
   confidence_threshold: 0.45
-  camera_index: 0             # webcam index on Mac / USB cam on Pi
+  camera_index: 0
   frame_width: 640
   frame_height: 480
-  inference_size: 320         # YOLO input size (smaller = faster on Pi)
-  frame_skip: 1                # run YOLO every Nth frame (1 = every frame)
-  use_picamera_on_pi: true     # try Pi Camera Module first, fallback to USB cam
+  inference_size: 320
+  frame_skip: 1
+  use_picamera_on_pi: true
   threaded_capture: true       # decouple camera I/O from YOLO inference (recommended, big FPS win on Pi 5)
 
 sensors:

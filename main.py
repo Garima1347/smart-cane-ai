@@ -162,9 +162,9 @@ def main():
                 camera = raw_camera
 
             detector = ObjectDetector(
-                model_path=cfg["vision"]["model"],
-                confidence_threshold=cfg["vision"]["confidence_threshold"],
-                inference_size=cfg["vision"]["inference_size"],
+            models=cfg["vision"]["models"],
+            confidence_threshold=cfg["vision"]["confidence_threshold"],
+            inference_size=cfg["vision"]["inference_size"],
             )
             voice_engine.speak("Camera and detection ready.")
         except Exception as e:
