@@ -3,7 +3,7 @@ if __name__ == "__main__":
     model = YOLO("yolo11n.pt")
 
     model.train(
-        data="datasets/Stairs/data.yaml",
+        data="datasets/stairs for blind.v1i.yolov8/data.yaml",
         epochs=50,
         imgsz=640,
         batch=8,
