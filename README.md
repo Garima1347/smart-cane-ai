@@ -1,260 +1,503 @@
-<<<<<<< HEAD
-# smart-cane-ai
-AI-powered smart cane perception and navigation system
-=======
-# Smart Navigation Cane — IoT + YOLO + Voice + Haptics
+# Smart Cane AI
 
-A voice-and-vibration guided smart cane system for visually impaired
-navigation. Fuses a YOLOv8 object detector (camera), a forward ultrasonic
-sensor, and a **second downward-facing ultrasonic sensor for pothole/curb
-detection** into real-time spoken and haptic alerts.
+## AI-Based Smart Cane for Visually Impaired People
 
-Runs identically on:
-- **macOS** (development/testing) — webcam + mocked sensors/motor/button
-- **Raspberry Pi 5** (deployment) — Pi Camera/USB cam + real GPIO hardware
+Smart Cane AI is a project designed to help visually impaired people detect obstacles and hazards while walking.
 
-The code auto-detects the platform at runtime (`src/utils/platform_utils.py`)
-and swaps hardware backends accordingly — write and test on Mac, then run
-the exact same `main.py` on the Pi.
+The main idea is simple: a normal cane helps a person detect obstacles by touching them. Our project adds AI and sensors to provide information about obstacles before the user reaches them.
+
+The system uses a camera, AI-based object detection, ultrasonic sensors, voice feedback, and vibration feedback.
+
+The goal is not to replace the traditional cane. It is to add an extra layer of information and safety.
 
 ---
 
-## 1. Features
+## Problem
 
-- **Object detection (YOLOv8n)** — identifies obstacles (person, chair,
-  car, pole, etc.) and their left/center/right direction.
-- **Forward ultrasonic distance** — precise close-range distance, always
-  spoken **in meters** ("Caution, person 1.8 meters ahead").
-- **Pothole / drop-off / step-up detection** — a second, downward-angled
-  ultrasonic sensor auto-calibrates to "flat ground" on startup, then flags
-  sudden deviations: a much-farther reading means a hole/drop-off/missing
-  step; a much-closer reading means a curb or step-up. This is checked
-  independently of the camera, since potholes are low-contrast and easy for
-  a vision model to miss entirely.
-- **Voice alerts (offline TTS)** — no internet needed, works outdoors.
-- **Haptic (vibration motor) alerts** — a silent backup channel. Pulses
-  fast for danger, slower for warnings — useful on loud streets or when the
-  user can't hear the voice alert clearly.
-- **Emergency SOS button** — hold for 2 seconds to trigger a repeating
-  "help needed" voice + vibration alert. (See "Extending with SOS
-  notifications" below for adding SMS/GPS.)
-- **Walking-speed-adaptive alerts** — if you're closing in on an obstacle
-  quickly, alert cooldowns automatically shrink so warnings repeat faster.
-  Standing still near something doesn't spam you; walking briskly toward it
-  does warn you more urgently.
-- **CSV obstacle logging** — every alert is timestamped and saved locally,
-  so a caregiver can review a session afterward ("lots of pothole alerts on
-  this route").
-- **Threaded camera capture** — camera I/O runs on its own thread so YOLO
-  inference is never stalled waiting on frame capture — meaningfully
-  improves FPS on Pi 5.
+For a visually impaired person, walking in an unfamiliar environment can be difficult.
+
+A normal cane can help detect physical obstacles, but it cannot tell the user what an object is.
+
+For example, the user may know that something is in front of them, but they may not know whether it is a person, door, vehicle, or another object.
+
+Ground hazards such as potholes, steps, and sudden changes in the ground can also be difficult to identify.
+
+This is the problem we are trying to address.
 
 ---
 
-## 2. Folder Structure
+## Our Approach
 
-```
-smart_cane/
-├── README.md
-├── requirements.txt
-├── config.yaml                  # ALL tunables — thresholds, GPIO pins, etc.
-├── main.py                      # entry point — starts everything
-├── models/                      # YOLO weights downloaded here
-├── scripts/
-│   ├── setup_mac.sh
-│   └── setup_pi.sh
-├── src/
-│   ├── vision/
-│   │   ├── camera.py            # cross-platform camera capture (cv2 / Picamera2)
-│   │   ├── camera_stream.py     # threaded wrapper — always-latest-frame, better FPS
-│   │   └── detector.py          # YOLOv8 wrapper — detects + direction + rough distance
-│   ├── sensors/
-│   │   ├── ultrasonic.py        # HC-SR04 (forward sensor) — real on Pi, mocked on Mac
-│   │   ├── ground_detector.py   # pothole / drop-off / step-up detection logic
-│   │   ├── sensor_manager.py    # background polling thread per sensor
-│   │   └── sos_button.py        # GPIO button (Pi) / keyboard substitute (Mac)
-│   ├── audio/
-│   │   ├── voice_alert.py       # offline TTS engine
-│   │   ├── alert_manager.py     # priority + cooldown + haptic + logging dispatch
-│   │   └── haptic.py            # vibration motor control (real on Pi, mock on Mac)
-│   ├── navigation/
-│   │   └── obstacle_logic.py    # fuses everything into alerts, meters phrasing,
-│   │                             # closing-speed-adaptive cooldowns
-│   └── utils/
-│       ├── platform_utils.py    # Mac vs Pi detection
-│       ├── logger.py            # console + file logging
-│       └── data_logger.py       # CSV obstacle/alert history
-└── tests/
-    └── test_sensors.py
-```
+Our system uses different components for different purposes.
+
+The camera is used to understand what is around the user.
+
+The ultrasonic sensor in the front is used to measure how close an obstacle is.
+
+The downward-facing ultrasonic sensor is used to identify changes in the ground, such as possible potholes, steps, or drop-offs.
+
+The system combines this information and gives an alert through voice and vibration.
 
 ---
 
-## 3. How it works
+## How It Works
 
-```
-Camera Thread ──► YOLO Detector ──────────────┐
-                                                ├──► Obstacle Fusion ──► Alert Manager ──┬─► Voice (TTS)
-Forward Ultrasonic Thread ──► Distance (cm) ───┤    (obstacle_logic.py)                  ├─► Haptic Motor
-                                                │                                          └─► CSV Log
-Ground Ultrasonic Thread ──► Hazard Detector ──┘
-                                                
-SOS Button (background) ──► Emergency Alert (bypasses cooldowns, clears queue)
-```
+The basic process is:
 
-- Forward ultrasonic gives fast, precise "how close" — the primary urgency
-  signal, always converted to **meters** in spoken phrases.
-- Ground ultrasonic feeds a rolling baseline calibration; sudden deviations
-  trigger hole/step alerts independent of everything else.
-- YOLO adds "what it is" and left/center/right direction on top.
-- A closing-speed tracker watches how fast the forward distance is
-  shrinking and shortens alert cooldowns proportionally when you're walking
-  briskly toward something.
-- The alert manager fans each triggered alert out to voice + haptic + CSV
-  log simultaneously.
+Camera
+→ AI object detection
+→ Detect object and direction
+
+Front ultrasonic sensor
+→ Measure obstacle distance
+
+Downward ultrasonic sensor
+→ Check ground level
+
+All this information
+→ Obstacle logic
+→ Alert system
+→ Voice and vibration
+
+The system also has an SOS button for a local emergency alert.
 
 ---
 
-## 4. Setup — macOS (development)
+## AI Object Detection
+
+The current project uses multiple YOLO models.
+
+### YOLO11n
+
+The `yolo11n.pt` model is used for general object detection.
+
+It detects objects from the camera feed and provides information such as:
+
+* Object type
+* Object location
+* Confidence
+* Approximate direction
+
+The detected object can be classified as being on the left, center, or right side of the camera view.
+
+For example:
+
+"Person on your left"
+
+or
+
+"Object ahead"
+
+---
+
+## Door Detection
+
+The project also contains a custom model called:
+
+`best_door.pt`
+
+This model is used for detecting doors.
+
+A separate model is useful because it allows us to train the system specifically for the type of detection we need.
+
+---
+
+## Pothole and Road Hazard Detection
+
+The project also contains:
+
+`best_pothole.pt`
+
+This model is used for detecting road-related hazards.
+
+The exact objects detected by this model depend on the classes used during training.
+
+The purpose of this model is to identify hazards that may not be handled well by a general object detection model.
+
+---
+
+## Ultrasonic Sensors
+
+The project uses two HC-SR04 ultrasonic sensors.
+
+### Front Sensor
+
+The front sensor measures the distance between the cane and an obstacle.
+
+The sensor sends an ultrasonic signal and measures the time taken for the signal to return after hitting an object.
+
+The basic formula is:
+
+Distance = (Time × Speed of Sound) / 2
+
+The division by two is because the signal travels to the object and then comes back.
+
+The front sensor mainly answers:
+
+"How close is the obstacle?"
+
+---
+
+## Ground Sensor
+
+The second ultrasonic sensor is positioned downward to monitor the ground in front of the cane.
+
+The system first gets a normal ground measurement and uses it as a reference.
+
+Later measurements are compared with this reference.
+
+A large change can indicate a possible:
+
+* Pothole
+* Drop-off
+* Step
+* Curb
+* Other ground-level change
+
+This sensor provides information that is different from the camera.
+
+---
+
+## Sensor Fusion
+
+The project does not depend on only one sensor.
+
+The camera tells us what an object may be.
+
+The front ultrasonic sensor tells us how close an obstacle is.
+
+The ground sensor checks for changes in the ground.
+
+The system combines this information before generating an alert.
+
+For example:
+
+The camera detects a person.
+
+The ultrasonic sensor detects that the obstacle is close.
+
+The system can then generate a higher-priority warning.
+
+---
+
+## Voice Alerts
+
+The system provides voice feedback to the user.
+
+Examples include:
+
+* Person ahead
+* Obstacle on the left
+* Door ahead
+* Possible pothole
+* Ground hazard detected
+
+The project uses offline text-to-speech, so basic voice feedback does not require an internet connection.
+
+---
+
+## Vibration Alerts
+
+The cane also provides vibration feedback.
+
+Different vibration patterns can be used for different levels of warning.
+
+For example:
+
+Slow vibration can indicate a warning.
+
+Faster or repeated vibration can indicate a more urgent situation.
+
+Using vibration along with voice feedback is useful because voice alerts may be difficult to hear in noisy environments.
+
+---
+
+## Adaptive Alerts
+
+The system does not always give warnings at the same frequency.
+
+If an obstacle is far away or the user is not moving quickly toward it, repeated warnings may not be necessary.
+
+If the obstacle is getting closer quickly, the system can provide warnings more frequently.
+
+This helps reduce unnecessary alerts while still providing faster warnings when the situation becomes more urgent.
+
+---
+
+## SOS Button
+
+The project includes an SOS button.
+
+When the button is pressed, the system can provide a local emergency alert using voice and vibration.
+
+Currently, the SOS feature does not send an SMS or GPS location.
+
+These features can be added in the future.
+
+---
+
+## Real-Time Processing
+
+The system has several tasks running continuously:
+
+* Camera capture
+* AI detection
+* Ultrasonic sensing
+* Ground monitoring
+* Alert generation
+
+The project uses separate processing threads for some of these tasks so that one operation does not unnecessarily block another.
+
+This is important because the system needs to respond to sensor changes and obstacles in real time.
+
+---
+
+## Hardware
+
+The main hardware used in the project is:
+
+| Component            | Purpose                          |
+| -------------------- | -------------------------------- |
+| Raspberry Pi 5       | Main processing unit             |
+| Camera               | Captures the surroundings        |
+| HC-SR04              | Measures front obstacle distance |
+| HC-SR04              | Monitors ground level            |
+| Vibration motor      | Provides haptic feedback         |
+| Speaker/audio output | Provides voice feedback          |
+| SOS button           | Emergency/local alert            |
+
+A transistor or MOSFET driver is used to control the vibration motor safely.
+
+A voltage divider is used with the ultrasonic sensor's Echo signal because Raspberry Pi GPIO uses 3.3V logic.
+
+---
+
+## Software
+
+The project is mainly written in Python.
+
+Important technologies used include:
+
+* Python
+* YOLO
+* OpenCV
+* Raspberry Pi
+* Ultrasonic sensors
+* Offline text-to-speech
+* GPIO
+* Multithreading
+
+---
+
+## Project Structure
+
+```text
+smart-cane-ai/
+│
+├── main.py
+├── config.yaml
+├── export_for_pi.py
+│
+├── model/
+│   ├── yolo11n.pt
+│   ├── best_door.pt
+│   └── best_pothole.pt
+│
+└── src/
+    ├── vision/
+    ├── sensors/
+    ├── navigation/
+    ├── audio/
+    └── utilities/
+```
+
+Each part of the project has a separate responsibility.
+
+The vision files handle the camera and AI detection.
+
+The sensor files handle ultrasonic sensors and the SOS button.
+
+The navigation files handle obstacle-related decisions.
+
+The audio files handle voice and alert management.
+
+The utility files handle functions such as vibration and data logging.
+
+---
+
+## Configuration
+
+The main configuration is stored in:
+
+`config.yaml`
+
+Some important settings include:
+
+* Confidence threshold: 0.45
+* Inference size: 320
+* Frame skip: 1
+* Threaded camera capture: enabled
+
+Keeping these values in a configuration file makes it easier to change the system without modifying the main code.
+
+---
+
+## Running the Project
+
+### 1. Clone the repository
 
 ```bash
-cd smart_cane
-chmod +x scripts/setup_mac.sh
-./scripts/setup_mac.sh
-source venv/bin/activate
+git clone https://github.com/Garima1347/smart-cane-ai.git
+cd smart-cane-ai
+```
+
+### 2. Create a virtual environment
+
+```bash
+python3 -m venv .venv
+```
+
+Activate it:
+
+```bash
+source .venv/bin/activate
+```
+
+### 3. Install the required packages
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Make sure the model files are available
+
+The required models are placed in the `model` directory:
+
+```text
+model/
+├── yolo11n.pt
+├── best_door.pt
+└── best_pothole.pt
+```
+
+### 5. Run the project
+
+```bash
 python main.py
 ```
 
-On Mac: webcam via OpenCV, forward + ground sensors are **simulated**
-(`MockUltrasonicSensor`), haptic motor is a no-op that logs what it would
-have done, and the SOS button becomes a keyboard substitute — type `s` +
-Enter in the terminal to simulate holding it.
+---
 
-Use `--interactive-sensor` to type distance values manually and test the
-full alert pipeline (including pothole/step detection) without hardware:
-```bash
-python main.py --interactive-sensor --show-preview
-```
+## Development and Testing
 
-## 5. Setup — Raspberry Pi 5 (deployment)
+The project can be developed and tested on a normal computer using simulated hardware where required.
 
-```bash
-cd smart_cane
-chmod +x scripts/setup_pi.sh
-./scripts/setup_pi.sh
-source venv/bin/activate
-python main.py
-```
+The final system is intended to run on a Raspberry Pi 5 with the actual camera and sensors.
 
-Installs `gpiozero` + `lgpio` (Pi 5's RP1 chip needs `lgpio`, **not** the
-older `RPi.GPIO`), `picamera2`, and `espeak-ng` for offline TTS.
-
-### Wiring — Forward ultrasonic (HC-SR04 #1)
-| HC-SR04 pin | Pi 5 pin |
-|---|---|
-| VCC | 5V (pin 2) |
-| GND | GND (pin 6) |
-| TRIG | GPIO23 (pin 16) |
-| ECHO | GPIO24 (pin 18) — **via voltage divider (1kΩ+2kΩ), ECHO is 5V, Pi GPIO is 3.3V-only** |
-
-Mount facing forward at roughly chest/hand height on the cane.
-
-### Wiring — Ground/pothole ultrasonic (HC-SR04 #2)
-| HC-SR04 pin | Pi 5 pin |
-|---|---|
-| VCC | 5V (another 5V pin, e.g. pin 4) |
-| GND | GND (pin 9) |
-| TRIG | GPIO17 (pin 11) |
-| ECHO | GPIO27 (pin 13) — **same voltage divider requirement** |
-
-Mount angled ~30-45° downward, aimed roughly 50-70cm ahead of the cane tip
-— far enough to give you reaction time, close enough to stay accurate.
-
-### Wiring — Vibration motor
-A GPIO pin cannot drive a motor directly (not enough current) — use a small
-NPN transistor (e.g. 2N2222) or a driver like a low-side MOSFET:
-```
-GPIO18 (pin 12) ──[1kΩ resistor]──► Transistor base
-Motor (+) ──► 5V
-Motor (−) ──► Transistor collector
-Transistor emitter ──► GND
-Flyback diode (1N4001) across the motor terminals (protects the GPIO/transistor)
-```
-
-### Wiring — SOS button
-```
-GPIO22 (pin 15) ──► Button ──► GND
-```
-(gpiozero's `Button` uses an internal pull-up by default, so no external
-resistor is needed — just wire the button between the GPIO pin and ground.)
-
-If you get a GPIO permission error:
-```bash
-sudo usermod -aG gpio $USER   # then log out and back in
-```
+This makes development easier because the software can be tested without having the complete physical cane connected all the time.
 
 ---
 
-## 6. Running
+## Current Limitations
 
-```bash
-python main.py                          # normal run
-python main.py --no-camera               # ultrasonic + ground sensor + voice only, skip YOLO
-python main.py --interactive-sensor       # Mac: type a distance to test alerts
-python main.py --show-preview             # OpenCV debug window with detection boxes
-python main.py --config custom.yaml
-```
-Press `Ctrl+C` to stop — this speaks a session summary ("14 alerts this
-walk, 3 urgent") before shutting down cleanly.
+This is a prototype, so there are some limitations.
 
-Hold the SOS button (or press `s`+Enter on Mac) at any time to trigger an
-emergency alert. Note: on Mac, `--interactive-sensor` and the keyboard SOS
-substitute both need stdin, so the SOS keyboard substitute is disabled
-automatically while `--interactive-sensor` is active (not an issue on the
-real Pi — the SOS button uses a dedicated GPIO pin, not the keyboard).
+### AI detection is not perfect
 
----
+The AI model can sometimes miss an object or detect an object incorrectly.
 
-## 7. Configuration
+Performance can be affected by:
 
-Everything tunable lives in `config.yaml`:
-- `alerts.danger_distance_cm` / `warning_distance_cm` — forward sensor thresholds
-- `sensors.ground.drop_threshold_cm` / `raise_threshold_cm` — pothole/step sensitivity
-- `alerts.adaptive_speed_cooldown` — toggle the walking-speed-adaptive alert timing
-- `haptic.enabled` / `haptic.pin` — vibration motor
-- `sos_button.enabled` / `sos_button.pin` / `sos_button.hold_seconds`
-- `logging.log_obstacles_csv` — toggle CSV history logging
-- `vision.threaded_capture` — toggle the threaded camera performance optimization
+* Poor lighting
+* Camera angle
+* Occlusion
+* Motion blur
+* Unusual objects
+* Unfamiliar environments
 
----
+### Vision-based distance is approximate
 
-## 8. Performance notes for Pi 5
+The camera-based proximity estimation is based on the size of the detected object in the image. It should not be treated as an exact distance measurement.
 
-- `yolov8n.pt` at 320×320 gets ~8-15 FPS on Pi 5 CPU — plenty for
-  walking-pace obstacle detection. Larger YOLO variants (s/m/l) aren't
-  recommended without a Coral/Hailo accelerator.
-- `vision.threaded_capture: true` (default) decouples camera I/O from
-  inference — recovers real FPS on Pi 5 vs. reading synchronously.
-- Ultrasonic and ground sensors each run on their own thread — precise
-  close-range/hazard alerts never wait on a slow camera frame.
-- Set `vision.frame_skip` higher (e.g. 2 or 3) if you need more CPU
-  headroom for other sensors/threads; the ultrasonic/ground sensors keep
-  running at full rate regardless.
-- Watch the periodic `Detection FPS: X.X` line in the logs (DEBUG level) to
-  tune these settings for your specific Pi 5 + camera combination.
+The ultrasonic sensor is used for physical distance measurement.
+
+### Ultrasonic sensors have limitations
+
+Their readings can be affected by:
+
+* Object shape
+* Surface material
+* Object angle
+* Sensor position
+* Environmental conditions
+
+### Multiple models require more processing
+
+The system uses multiple AI models, so running them on a Raspberry Pi requires more processing power than running a single small model.
+
+Actual performance should therefore be measured on the final hardware.
+
+### SOS is currently local
+
+The current SOS system does not send an SMS or GPS location.
 
 ---
 
-## 9. Extending with SOS notifications
+## Future Improvements
 
-The SOS button currently triggers a local voice + vibration alert only. To
-send an actual message to a caregiver, add hardware and hook into
-`handle_sos()` in `main.py`:
-- **GSM module (e.g. SIM800L)** — send an SMS with a fixed message or GPS coordinates.
-- **GPS module (e.g. NEO-6M)** — read live coordinates to include in the SMS.
-- **WiFi + a notification service** (e.g. Pushover, Twilio, a Telegram bot)
-  if the Pi has internet access — simpler than GSM but depends on connectivity.
+Some possible future improvements are:
 
-These aren't included by default since they need extra hardware/accounts,
-but the codebase is structured so adding them is a small, contained change.
->>>>>>> origin/feature/pothole-detection
+* GPS integration
+* SMS emergency alerts
+* Mobile application
+* Emergency contact system
+* Better distance estimation
+* More accurate ground-hazard detection
+* More training data
+* Better performance on low-light images
+* Faster AI inference
+* Model optimization for Raspberry Pi
+* Better sensor fusion
+* Support for multiple languages
+* Improved battery life
+* Smaller and lighter hardware
+
+---
+
+## What Makes This Project Different?
+
+Smart canes and assistive navigation systems already exist.
+
+We are not claiming that the idea of a smart cane is completely new.
+
+Our focus is on combining different technologies into one system.
+
+The camera provides information about objects.
+
+The ultrasonic sensors provide distance and ground information.
+
+The alert system converts this information into simple voice and vibration feedback.
+
+The goal is to provide the user with more information about their surroundings without removing the benefits of a traditional cane.
+
+---
+
+## Project Goal
+
+The goal of Smart Cane AI is to explore how AI and embedded systems can be used to provide additional awareness to visually impaired people while walking.
+
+We want the system to answer three simple questions:
+
+1. What is around me?
+2. How close is it?
+3. Is the ground ahead safe?
+
+By combining computer vision, ultrasonic sensing, and accessible feedback, we hope to make each step a little safer and more informed.
+
+---
+
+## Disclaimer
+
+Smart Cane AI is a prototype project and has not been designed or certified as a medical or safety device.
+
+The system can make incorrect predictions or miss hazards. It should therefore be considered an assistive technology prototype and should not be used as the sole method of navigation.
