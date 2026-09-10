@@ -9,7 +9,7 @@ env/
 
 # YOLO training results
 runs/
-*.pt
+
 *.onnx
 
 # Datasets
