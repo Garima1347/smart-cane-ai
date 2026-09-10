@@ -45,11 +45,11 @@ __pycache__/
 *.pyd
 
 # Model Weights & Training Outputs
-*.pt
+
 *.onnx
 *.engine
 runs/
-models/
+
 
 # Datasets
 datasets/
