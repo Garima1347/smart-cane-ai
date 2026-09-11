@@ -41,6 +41,7 @@ class ObjectDetector:
 
         if models is None:
             models = {
+                "stair_ramp": "model/best_stair_ramp.pt",
                 "general": "model/yolo11n.pt",
                 "door": "model/best_door.pt",
                 "road_hazard": "model/best_pothole.pt",

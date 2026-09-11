@@ -2,6 +2,7 @@
 
 vision:
   models:
+    stairs_ramp: models/best_stairs_ramp.pt
     general: "model/yolo11n.pt"
     door: "model/best_door.pt"
     road_hazard: "model/best_pothole.pt"
