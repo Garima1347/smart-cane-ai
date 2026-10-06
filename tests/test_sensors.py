@@ -57,7 +57,6 @@ def test_distance_phrasing_in_meters():
     assert format_distance_phrase(2.3) == "2.3 meters"
     print("test_distance_phrasing_in_meters: PASSED")
 
-
 def test_pothole_detection_after_calibration():
     gd = GroundHazardDetector(drop_threshold_cm=12, raise_threshold_cm=8, calibration_samples=10)
     for _ in range(10):
