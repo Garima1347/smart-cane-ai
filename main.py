@@ -123,7 +123,11 @@ def main():
     # --- Closing-speed tracker (adaptive alert timing) ---
     speed_tracker = ClosingSpeedTracker()
     adaptive_speed = cfg["alerts"].get("adaptive_speed_cooldown", True)
-
+    # Track the last processed physical sensor sample.
+    # The main loop runs faster than the ultrasonic sensors, so the
+    # same physical reading must never be processed repeatedly.
+    last_front_sequence = None
+    last_ground_sequence = None
     # --- SOS button ---
     sos_cfg = cfg.get("sos_button", {})
     sos_button = None
@@ -210,16 +214,43 @@ def main():
                             break
 
             # --- Sensor step ---
-            forward_distance = sensor_manager.get_latest("front")
-            speed_tracker.update(forward_distance, loop_start)
-            speed_multiplier = speed_tracker.urgency_multiplier() if adaptive_speed else 1.0
+            front_sample = sensor_manager.get_latest_sample("front")
+
+            forward_distance = None
+
+            if front_sample is not None:
+                forward_distance = front_sample["distance_cm"]
+
+                # Process each physical ultrasonic reading exactly once.
+                if front_sample["sequence"] != last_front_sequence:
+                    speed_tracker.update(
+                        forward_distance,
+                        front_sample["timestamp"],
+                    )
+                    last_front_sequence = front_sample["sequence"]
+
+            speed_multiplier = (
+                speed_tracker.urgency_multiplier()
+                if adaptive_speed
+                else 1.0
+            )
 
             ground_hazard = None
-            if ground_detector:
-                ground_reading = sensor_manager.get_latest("ground")
-                ground_detector.update(ground_reading)
-                ground_hazard = ground_detector.check_hazard()
 
+            if ground_detector:
+                ground_sample = sensor_manager.get_latest_sample("ground")
+                ground_reading = None
+
+                if ground_sample is not None:
+                    ground_reading = ground_sample["distance_cm"]
+
+                    # Process each physical ground reading exactly once.
+                    if ground_sample["sequence"] != last_ground_sequence:
+                        ground_detector.update(ground_reading)
+                        last_ground_sequence = ground_sample["sequence"]
+
+                ground_hazard = ground_detector.check_hazard()           
+                        
             # --- Fusion + alerts ---
             alerts = build_alerts(
                 detections=detections,

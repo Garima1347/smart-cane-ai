@@ -1,96 +1,224 @@
 """
-Ground hazard detection — potholes, curbs, drop-offs (missing steps, ditches)
-and step-ups, using a SECOND ultrasonic sensor mounted facing down and
-slightly forward on the cane (roughly 30-45 degrees off vertical, aimed
-~50-70cm ahead of the tip).
+Ground-facing ultrasonic hazard detection.
 
-How it works:
-  On flat ground, the downward sensor reads a stable "baseline" distance to
-  the ground (calibrated automatically in the first few seconds of running,
-  and continuously re-averaged while the reading is stable). Any *sudden*
-  deviation from that baseline means the ground ahead isn't flat:
+Detects:
+    - holes / drops
+    - steps / raised surfaces
 
-    - Reading much LARGER than baseline  -> a hole, drop-off, missing step,
-      or downward staircase. This is the most dangerous case for a cane
-      user and gets an urgent alert.
-    - Reading much SMALLER than baseline -> a raised curb, step up, or
-      obstacle on the ground directly ahead.
+The detector uses:
+    - stable startup calibration
+    - a rolling history
+    - consecutive confirmations
+    - controlled baseline adaptation
 
-This is the same basic principle real assistive-cane research prototypes
-use (e.g. "smart cane" IoT projects with a second downward IR/ultrasonic
-sensor) — it's a cheap, reliable, low-latency way to catch hazards that a
-camera struggles with (potholes are low-contrast and easy for YOLO to miss
-entirely, since it's not a class YOLO is trained on).
+This prevents one noisy ultrasonic reading from triggering
+an emergency ground alert.
 """
 
 import logging
-import time
 from collections import deque
 
 logger = logging.getLogger("smart_cane")
 
 
 class GroundHazardDetector:
-    def __init__(self, drop_threshold_cm: float = 12.0, raise_threshold_cm: float = 8.0,
-                 calibration_samples: int = 30, history_size: int = 10):
-        """
-        drop_threshold_cm: how much FARTHER than baseline counts as a hole/drop-off.
-        raise_threshold_cm: how much CLOSER than baseline counts as a step-up/curb.
-        calibration_samples: readings used to establish the initial flat-ground baseline.
-        """
-        self.drop_threshold_cm = drop_threshold_cm
-        self.raise_threshold_cm = raise_threshold_cm
+    def __init__(
+        self,
+        drop_threshold_cm: float = 12.0,
+        raise_threshold_cm: float = 8.0,
+        calibration_samples: int = 30,
+        history_size: int = 10,
+        confirmation_samples: int = 3,
+        baseline_adaptation_rate: float = 0.02,
+    ):
+        if drop_threshold_cm <= 0:
+            raise ValueError("drop_threshold_cm must be greater than 0")
+
+        if raise_threshold_cm <= 0:
+            raise ValueError("raise_threshold_cm must be greater than 0")
+
+        if calibration_samples < 3:
+            raise ValueError("calibration_samples must be at least 3")
+
+        if history_size < 1:
+            raise ValueError("history_size must be at least 1")
+
+        if confirmation_samples < 1:
+            raise ValueError("confirmation_samples must be at least 1")
+
+        if not 0.0 < baseline_adaptation_rate <= 1.0:
+            raise ValueError(
+                "baseline_adaptation_rate must be between 0 and 1"
+            )
+
+        self.drop_threshold_cm = float(drop_threshold_cm)
+        self.raise_threshold_cm = float(raise_threshold_cm)
         self.calibration_samples = calibration_samples
+        self.confirmation_samples = confirmation_samples
+        self.baseline_adaptation_rate = baseline_adaptation_rate
 
         self._baseline = None
         self._calibration_buffer = []
+
         self._history = deque(maxlen=history_size)
 
-    def update(self, reading_cm: float):
-        """Feed a new downward-sensor reading. Call this every poll cycle."""
+        # Number of consecutive samples supporting each hazard.
+        self._hole_confirmation_count = 0
+        self._step_confirmation_count = 0
+
+    def update(self, reading_cm):
+        """
+        Add one new physical ground-sensor reading.
+
+        Invalid or missing readings are ignored.
+        """
         if reading_cm is None:
+            return
+
+        try:
+            reading_cm = float(reading_cm)
+        except (TypeError, ValueError):
+            return
+
+        if reading_cm <= 0:
             return
 
         self._history.append(reading_cm)
 
+        # ---------------------------------------------------------
+        # Startup calibration
+        # ---------------------------------------------------------
         if self._baseline is None:
             self._calibration_buffer.append(reading_cm)
+
             if len(self._calibration_buffer) >= self.calibration_samples:
-                self._baseline = sum(self._calibration_buffer) / len(self._calibration_buffer)
-                logger.info(f"Ground sensor calibrated: baseline={self._baseline:.1f}cm")
+                self._baseline = self._calculate_stable_baseline(
+                    self._calibration_buffer
+                )
+
+                logger.info(
+                    "Ground sensor calibrated. Baseline: %.1f cm",
+                    self._baseline,
+                )
+
             return
 
-        # Slowly drift the baseline to track gradual terrain changes (e.g. walking
-        # onto a gentle slope), but only while readings look "normal" — a sudden
-        # spike/drop should NOT get absorbed into the baseline, or we'd miss it.
+        # ---------------------------------------------------------
+        # Baseline adaptation
+        #
+        # Only adapt when the current reading is close to the
+        # established baseline. This prevents a hole/step from
+        # permanently changing the baseline.
+        # ---------------------------------------------------------
         deviation = reading_cm - self._baseline
-        if abs(deviation) < self.raise_threshold_cm:
-            self._baseline = 0.98 * self._baseline + 0.02 * reading_cm
 
-    def check_hazard(self) -> dict:
+        if abs(deviation) < self.raise_threshold_cm:
+            self._baseline = (
+                (1.0 - self.baseline_adaptation_rate) * self._baseline
+                + self.baseline_adaptation_rate * reading_cm
+            )
+
+    def check_hazard(self):
         """
-        Returns {"type": "hole"|"step_up"|None, "deviation_cm": float}
-        Requires calibration to be complete; returns type=None until then.
+        Return a confirmed ground hazard.
+
+        A single abnormal reading is not enough.
+
+        Returns:
+            {
+                "type": "hole" | "step_up" | None,
+                "deviation_cm": float
+            }
         """
         if self._baseline is None or not self._history:
-            return {"type": None, "deviation_cm": 0.0}
+            self._reset_confirmation()
+            return {
+                "type": None,
+                "deviation_cm": 0.0,
+            }
 
         latest = self._history[-1]
         deviation = latest - self._baseline
 
+        # ---------------------------------------------------------
+        # Hole / drop detection
+        # ---------------------------------------------------------
         if deviation >= self.drop_threshold_cm:
-            return {"type": "hole", "deviation_cm": deviation}
+            self._hole_confirmation_count += 1
+            self._step_confirmation_count = 0
+
+            if self._hole_confirmation_count >= self.confirmation_samples:
+                return {
+                    "type": "hole",
+                    "deviation_cm": deviation,
+                }
+
+        # ---------------------------------------------------------
+        # Step-up detection
+        # ---------------------------------------------------------
         elif deviation <= -self.raise_threshold_cm:
-            return {"type": "step_up", "deviation_cm": abs(deviation)}
+            self._step_confirmation_count += 1
+            self._hole_confirmation_count = 0
+
+            if self._step_confirmation_count >= self.confirmation_samples:
+                return {
+                    "type": "step_up",
+                    "deviation_cm": abs(deviation),
+                }
+
+        # ---------------------------------------------------------
+        # Normal reading
+        # ---------------------------------------------------------
         else:
-            return {"type": None, "deviation_cm": deviation}
+            self._reset_confirmation()
+
+        return {
+            "type": None,
+            "deviation_cm": deviation,
+        }
+
+    @staticmethod
+    def _calculate_stable_baseline(samples):
+        """
+        Calculate a robust baseline.
+
+        Instead of trusting one average directly, remove the lowest
+        and highest 10% of readings when enough samples are available.
+        This reduces the effect of startup noise/outliers.
+        """
+        values = sorted(float(value) for value in samples)
+
+        if len(values) < 10:
+            return sum(values) / len(values)
+
+        trim_count = max(1, int(len(values) * 0.10))
+
+        trimmed = values[trim_count:-trim_count]
+
+        if not trimmed:
+            trimmed = values
+
+        return sum(trimmed) / len(trimmed)
+
+    def _reset_confirmation(self):
+        self._hole_confirmation_count = 0
+        self._step_confirmation_count = 0
 
     @property
-    def is_calibrated(self) -> bool:
+    def is_calibrated(self):
         return self._baseline is not None
 
+    @property
+    def baseline_cm(self):
+        return self._baseline
+
     def recalibrate(self):
-        """Force re-calibration (e.g. call this if the user starts on uneven ground)."""
+        """
+        Reset calibration and hazard confirmation state.
+        """
         self._baseline = None
         self._calibration_buffer = []
-        logger.info("Ground sensor recalibration requested.")
+        self._history.clear()
+        self._reset_confirmation()
+
+        logger.info("Ground sensor calibration reset.")

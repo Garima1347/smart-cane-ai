@@ -14,6 +14,7 @@ from src.sensors.ground_detector import GroundHazardDetector
 from src.navigation.obstacle_logic import build_alerts, format_distance_phrase, ClosingSpeedTracker
 
 
+
 def test_mock_sensor_returns_valid_range():
     sensor = MockUltrasonicSensor(max_distance_cm=400)
     for _ in range(20):
@@ -57,27 +58,62 @@ def test_distance_phrasing_in_meters():
     assert format_distance_phrase(2.3) == "2.3 meters"
     print("test_distance_phrasing_in_meters: PASSED")
 
-def test_pothole_detection_after_calibration():
-    gd = GroundHazardDetector(drop_threshold_cm=12, raise_threshold_cm=8, calibration_samples=10)
-    for _ in range(10):
-        gd.update(40.0)  # calibrate on flat ground
-    assert gd.is_calibrated
-    assert gd.check_hazard()["type"] is None
 
-    gd.update(60.0)  # sudden drop-off
-    hazard = gd.check_hazard()
+def test_pothole_detection_after_calibration():
+
+    detector = GroundHazardDetector(
+        calibration_samples=10,
+        history_size=5,
+        confirmation_samples=3,
+    )
+
+    # Calibration
+    for _ in range(10):
+        detector.update(40)
+
+    assert detector.baseline_cm == 40
+
+    # One abnormal reading should NOT trigger a hazard.
+    detector.update(60)
+    assert detector.check_hazard()["type"] is None
+
+    # Second abnormal reading still should NOT trigger.
+    detector.update(60)
+    assert detector.check_hazard()["type"] is None
+
+    # Third consecutive abnormal reading confirms the hole.
+    detector.update(60)
+    hazard = detector.check_hazard()
     assert hazard["type"] == "hole"
-    print("test_pothole_detection_after_calibration: PASSED")
 
 
 def test_step_up_detection_after_calibration():
-    gd = GroundHazardDetector(drop_threshold_cm=12, raise_threshold_cm=8, calibration_samples=10)
+    detector = GroundHazardDetector(
+        drop_threshold_cm=12,
+        raise_threshold_cm=8,
+        calibration_samples=10,
+        confirmation_samples=3,
+    )
+
+    # Calibration
     for _ in range(10):
-        gd.update(40.0)
-    gd.update(28.0)  # sudden closer reading = curb/step
-    hazard = gd.check_hazard()
+        detector.update(40.0)
+
+    assert detector.baseline_cm == 40.0
+
+    # Three consecutive closer readings confirm a step-up.
+    detector.update(28.0)
+    hazard = detector.check_hazard()
+    assert hazard["type"] is None
+
+    detector.update(28.0)
+    hazard = detector.check_hazard()
+    assert hazard["type"] is None
+
+    detector.update(28.0)
+    hazard = detector.check_hazard()
     assert hazard["type"] == "step_up"
-    print("test_step_up_detection_after_calibration: PASSED")
+    
 
 
 def test_ground_hazard_alert_is_urgent():
