@@ -52,7 +52,7 @@ runs/
 
 
 # Datasets
-datasets/
+Indian Currency detection/
 
 # Logs & Data Collection
 *.log
