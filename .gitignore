@@ -16,7 +16,7 @@ runs/
 data/coco/
 data/images/
 data/labels/
-datasets/
+/Indian Currency detection.v1i.yolov11/
 
 # Smart Cane project data
 test_images/
